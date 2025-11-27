@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "WeatherRaw",
+  "namespace": "com.weather.raw",
+  "fields": [
+    {"name": "city", "type": "string"},
+    {"name": "temperature", "type": "double"},
+    {"name": "humidity", "type": "double"},
+    {"name": "wind_speed", "type": "double"},
+    {"name": "pressure", "type": "double"},
+    {"name": "timestamp", "type": "long"}
+  ]
+} 
