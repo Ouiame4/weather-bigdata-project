@@ -68,23 +68,26 @@ st.markdown("""
 
 # --- 3. DONNÉES GÉOGRAPHIQUES ---
 CITY_COORDS = {
-    "Paris": [48.85, 2.35], "London": [51.50, -0.12], "New York": [40.71, -74.00],
-    "Tokyo": [35.68, 139.76], "Sydney": [-33.86, 151.20], "Berlin": [52.52, 13.40],
-    "Madrid": [40.41, -3.70], "Rome": [41.90, 12.49], "Moscow": [55.75, 37.61],
-    "Dubai": [25.20, 55.27], "Mumbai": [19.07, 72.87], "Beijing": [39.90, 116.40],
-    "Los Angeles": [34.05, -118.24], "Rio de Janeiro": [-22.90, -43.17], "Cairo": [30.04, 31.23],
     "Tanger": [35.77, -5.80], "Tetouan": [35.57, -5.36], "Al Hoceima": [35.25, -3.93],
-    "Nador": [35.17, -2.93], "Chefchaouen": [35.17, -5.26], "Larache": [35.19, -6.15],
-    "Oujda": [34.68, -1.90], "Kenitra": [34.26, -6.58], "Rabat": [34.02, -6.83],
-    "Casablanca": [33.57, -7.58], "Mohammedia": [33.68, -7.38], "El Jadida": [33.23, -8.50],
-    "Settat": [33.00, -7.62], "Safi": [32.31, -9.23], "Essaouira": [31.50, -9.77],
-    "Agadir": [30.42, -9.59], "Fes": [34.03, -5.00], "Meknes": [33.89, -5.55],
-    "Ifrane": [33.53, -5.11], "Beni Mellal": [32.34, -6.35], "Khenifra": [32.93, -5.66],
-    "Midelt": [32.68, -4.73], "Marrakech": [31.62, -7.98], "Ouarzazate": [30.91, -6.89],
-    "Errachidia": [31.93, -4.42], "Zagora": [30.33, -5.84], "Tinghir": [31.51, -5.53],
-    "Taroudant": [30.47, -8.87], "Tiznit": [29.69, -9.73], "Guelmim": [28.99, -10.06],
-    "Tan-Tan": [28.43, -11.10], "Laayoune": [27.12, -13.19], "Smara": [26.74, -11.67],
-    "Dakhla": [23.68, -15.95]
+    "Nador": [35.17, -2.93], "Oujda": [34.68, -1.90], "Rabat": [34.02, -6.83],
+    "Casablanca": [33.57, -7.58], "Kenitra": [34.26, -6.58], "Fes": [34.03, -5.00],
+    "Meknes": [33.89, -5.55], "Ifrane": [33.53, -5.11], "Marrakech": [31.62, -7.98],
+    "Essaouira": [31.50, -9.77], "Agadir": [30.42, -9.59], "Ouarzazate": [30.91, -6.89],
+    "Errachidia": [31.93, -4.42], "Laayoune": [27.12, -13.19], "Dakhla": [23.68, -15.95],
+    "Tunis": [36.80, 10.18], "Cairo": [30.04, 31.23], "Dakar": [14.71, -17.46],
+    "Nairobi": [-1.29, 36.82], "Cape Town": [-33.92, 18.42], "Lagos": [6.52, 3.37],
+    "Paris": [48.85, 2.35], "London": [51.50, -0.12], "Berlin": [52.52, 13.40],
+    "Madrid": [40.41, -3.70], "Rome": [41.90, 12.49], "Moscow": [55.75, 37.61],
+    "Kyiv": [50.45, 30.52], "Oslo": [59.91, 10.75], "Istanbul": [41.00, 28.97],
+    "Athens": [37.98, 23.72], "Reykjavik": [64.14, -21.94], "Lisbon": [38.72, -9.13],
+    "Tokyo": [35.68, 139.76], "Beijing": [39.90, 116.40], "Mumbai": [19.07, 72.87],
+    "New Delhi": [28.61, 77.20], "Dubai": [25.20, 55.27], "Riyadh": [24.71, 46.67],
+    "Bangkok": [13.75, 100.50], "Singapore": [1.35, 103.81], "Seoul": [37.56, 126.97],
+    "Jakarta": [-6.20, 106.84], "New York": [40.71, -74.00], "Los Angeles": [34.05, -118.24],
+    "Chicago": [41.87, -87.62], "Toronto": [43.65, -79.38], "Mexico City": [19.43, -99.13],
+    "Rio de Janeiro": [-22.90, -43.17], "Buenos Aires": [-34.60, -58.38], "Santiago": [-33.44, -70.66],
+    "Bogota": [4.71, -74.07], "Lima": [-12.04, -77.04], "Sydney": [-33.86, 151.20],
+    "Melbourne": [-37.81, 144.96], "Auckland": [-36.84, 174.76]
 }
 
 def load_data():
@@ -169,7 +172,7 @@ while True:
 
         # ONGLET 1 : GRAPHIQUE
         with tab1:
-            st.subheader("Prévisions vs Réalité")
+            st.subheader("Prévisions (24h) vs Réalité")
             # Tri des données pour que la courbe soit lisible (froid -> chaud)
             df_sorted = df.sort_values('actual_temp')
             df_chart = df_sorted[['city', 'actual_temp', 'predicted_temp']].melt('city', var_name='Type', value_name='Température')
@@ -210,7 +213,7 @@ while True:
                     st.metric(
                         label=f"📍 {row['city']}",
                         value=f"{row['actual_temp']} °C",
-                        delta=f"{delta:+.2f}°C",
+                        delta=f"{delta:+.2f}°C (Demain)",
                         delta_color="inverse"
                     )
                     st.caption(f"Humidité: {row['humidity']}% | Vent: {row['wind']} km/h")
