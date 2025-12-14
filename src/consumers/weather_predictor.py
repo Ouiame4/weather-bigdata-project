@@ -1,105 +1,108 @@
 import joblib
-import json
 import time
 import pandas as pd
 import os
+import datetime
 from confluent_kafka import Consumer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer
 from confluent_kafka.serialization import SerializationContext, MessageField
 import warnings
 
+# --- INFLUXDB IMPORT ---
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+
 warnings.filterwarnings("ignore")
 
-# Config
+# --- CONFIG ---
 KAFKA_BOOTSTRAP = "localhost:9092"
 SCHEMA_REGISTRY_URL = "http://localhost:8081"
 INPUT_TOPIC = "data.weather.live"
-MODEL_FILE = "../src/models/weather_model.pkl"
+MODEL_FILE = "weather_model.pkl"
+
+#  CONFIG INFLUXDB (A ADAPTER SELON VOTRE DOCKER)
+INFLUX_URL = "http://localhost:8086"
+INFLUX_TOKEN = "adminpassword"  # Mettez ici votre token ou password admin
+INFLUX_ORG = "ecostream"
+INFLUX_BUCKET = "weather_data"
+
+TARGET_HOURS = list(range(24))
 
 def main():
-    print("🔄 Démarrage du Prédicteur (Version Robuste)...")
+    print("🔄 Prédicteur -> InfluxDB (24h) Démarré...")
     
-    # 1. Chargement IA
-    if not os.path.exists(MODEL_FILE):
-        print(f"❌ ERREUR: '{MODEL_FILE}' introuvable.")
-        return
-    
+    if not os.path.exists(MODEL_FILE): return
     model = joblib.load(MODEL_FILE)
-    print("🧠 IA Météo chargée.")
-
-    # 2. Config Kafka
+    
+    # Kafka Setup
     schema_registry = SchemaRegistryClient({'url': SCHEMA_REGISTRY_URL})
     try:
         input_schema = schema_registry.get_latest_version(f"{INPUT_TOPIC}-value").schema.schema_str
         avro_deserializer = AvroDeserializer(schema_registry, input_schema)
-    except Exception as e:
-        print(f"❌ ERREUR Schéma: {e}")
-        return
+    except: return
     
     consumer = Consumer({
         'bootstrap.servers': KAFKA_BOOTSTRAP,
-        'group.id': 'dashboard-feeder-v3', # Nouveau groupe pour éviter les conflits
+        'group.id': 'weather-influx-consumer-v2',
         'auto.offset.reset': 'earliest'
     })
     consumer.subscribe([INPUT_TOPIC])
 
-    print("📊 Traitement des données...")
+    # InfluxDB Setup
+    try:
+        client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+        write_api = client.write_api(write_options=SYNCHRONOUS)
+        print("✅ Connecté à la Base de Données")
+    except Exception as e:
+        print(f"❌ Erreur DB: {e}")
+        return
 
-    msg_count = 0
+    print("📊 Traitement des flux...")
+
     while True:
         msg = consumer.poll(1.0)
-        
         if msg is None: continue
-
-        if msg.error():
-            print(f"⚠️ Erreur Kafka: {msg.error()}")
-            continue
+        if msg.error(): continue
 
         try:
             data = avro_deserializer(msg.value(), SerializationContext(INPUT_TOPIC, MessageField.VALUE))
-            msg_count += 1
             
-            # --- CORRECTION DU BUG ---
-            # On utilise .get() avec une valeur par défaut pour éviter le crash
-            # Si 'is_day' manque, on suppose qu'il fait jour (1)
-            # Si 'pressure' manque, on met une pression standard (1013)
-            
-            temp = data.get('temperature', 0)
-            hum = data.get('humidity', 50)
-            pres = data.get('pressure', 1013)
-            wind = data.get('wind_speed', 10)
-            is_day = data.get('is_day', 1) 
-
-            # Préparation IA
-            features = pd.DataFrame([[temp, hum, pres, wind, is_day]], 
-                                  columns=["temperature", "humidity", "pressure", "wind_speed", "is_day"])
+            # Données Live
+            temp = float(data.get('temperature', 0))
+            hum = float(data.get('humidity', 50))
+            pres = float(data.get('pressure', 1013))
+            wind = float(data.get('wind_speed', 10))
+            is_day = int(data.get('is_day', 1))
+            current_hour = datetime.datetime.now().hour
+            city = str(data.get('city', 'Inconnue'))
 
             # Prédiction
-            predicted_temp = model.predict(features)[0]
+            features = pd.DataFrame([[temp, hum, pres, wind, is_day, current_hour]], 
+                                  columns=["temperature", "humidity", "pressure", "wind_speed", "is_day", "current_hour"])
+            preds = model.predict(features)[0]
+            pred_max = float(max(preds))
+
+            # --- ECRITURE INFLUXDB ---
+            # On stocke tout dans un "Point"
+            point = Point("weather_metrics") \
+                .tag("city", city) \
+                .field("actual_temp", temp) \
+                .field("humidity", hum) \
+                .field("wind", wind) \
+                .field("pred_max_tomorrow", pred_max) \
+                .time(datetime.datetime.utcnow(), WritePrecision.NS)
             
-            # Sauvegarde JSON pour le Dashboard
-            dashboard_data = {
-                "city": data.get('city', 'Inconnue'),
-                "actual_temp": temp,
-                "predicted_temp": round(float(predicted_temp), 2),
-                "humidity": hum,
-                "wind": wind,
-                "timestamp": time.time()
-            }
+            # On ajoute les 24 prévisions comme champs (fields) séparés
+            for h, val in zip(TARGET_HOURS, preds):
+                point.field(f"pred_{h:02d}h", float(val))
+
+            write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
             
-            os.makedirs("dashboard_data", exist_ok=True)
-            # On sauvegarde uniquement si on a un nom de ville valide
-            if 'city' in data:
-                with open(f"dashboard_data/{data['city']}.json", "w") as f:
-                    json.dump(dashboard_data, f)
-                
-                print(f"✅ [{msg_count}] {data['city']} : {temp}°C -> Prévision : {predicted_temp:.2f}°C")
+            print(f"✅ {city:<10} | Saved to DB | Max Demain: {pred_max:.1f}°C")
 
         except Exception as e:
-            # On ignore les erreurs sur les vieux messages pour ne pas arrêter le script
-            # print(f"⚠️ Message ignoré : {e}")
-            pass
+            print(f"⚠️ Erreur: {e}")
 
 if __name__ == "__main__":
     main()

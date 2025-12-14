@@ -1,222 +1,225 @@
 import streamlit as st
-import json
-import time
 import pandas as pd
-import glob
+import time
 import altair as alt
-import numpy as np
+from influxdb_client import InfluxDBClient
 
-# --- 1. CONFIGURATION DE LA PAGE ---
+# --- 1. CONFIGURATION GLOBALE ---
 st.set_page_config(
-    page_title="EcoStream AI | Monitoring",
-    page_icon="☀️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide", 
+    page_title="EcoStream AI | Monitor", 
+    page_icon="🌤️",
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. STYLE CSS (THÈME CLAIR & PRO) ---
+# --- 2. STYLE CSS AVANCÉ ---
 st.markdown("""
 <style>
-    /* Fond de la page */
-    .stApp {
-        background-color: #F8F9FA;
-        color: #212529;
-    }
+/* ========================= */
+/* FOND GLOBAL (GRIS)        */
+/* ========================= */
+.stApp {
+    background-color: #F8F9FA;
+}
 
-    /* CARTES MÉTRIQUES (KPIs) */
-    div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E9ECEF;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        /* Astuce pour forcer la même hauteur partout */
-        min-height: 110px; 
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-    
-    div[data-testid="stMetric"]:hover {
-        border-color: #4DA3FF;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
+/* ========================= */
+/* KPI CARDS                 */
+/* ========================= */
+div[data-testid="stMetric"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E6E6EA;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
 
-    /* Valeurs (Chiffres) */
-    div[data-testid="stMetricValue"] {
-        color: #1F2937 !important;
-        font-size: 26px !important;
-        font-weight: 700 !important;
-    }
+/* ========================= */
+/* CONTAINERS (BORDURES)     */
+/* ========================= */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: transparent !important;
+}
 
-    /* Labels (Titres des cartes) */
-    div[data-testid="stMetricLabel"] {
-        color: #6B7280 !important;
-        font-size: 14px !important;
-        font-weight: 600;
-    }
+div[data-testid="stVerticalBlockBorderWrapper"] > div {
+    background-color: #FFFFFF !important;
+    border-radius: 14px;
+    border: 1px solid #E6E6EA;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
 
-    /* TITRE PRINCIPAL */
-    h1 {
-        color: #1A73E8;
-        font-weight: 800;
-        text-align: center;
-        margin-bottom: 20px;
-    }
+/* ========================= */
+/* GRAPHIQUES ALTAIR         */
+/* ========================= */
+div[data-testid="stVegaLiteChart"],
+div[data-testid="stVegaLiteChart"] > div {
+    background-color: #FFFFFF !important;
+}
+
+/* ========================= */
+/* DATAFRAME / TABLEAU       */
+/* ========================= */
+div[data-testid="stDataFrame"],
+div[data-testid="stDataFrame"] > div,
+div[data-testid="stDataFrame"] table {
+    background-color: #FFFFFF !important;
+    border-radius: 10px;
+}
+
+/* cellules tableau */
+thead, tbody, tr, td, th {
+    background-color: #FFFFFF !important;
+}
+
+/* ========================= */
+/* TITRES                    */
+/* ========================= */
+h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1E293B;
+    margin-bottom: 16px;
+}
+
+/* ========================= */
+/* ESPACEMENT GLOBAL         */
+/* ========================= */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. DONNÉES GÉOGRAPHIQUES ---
-CITY_COORDS = {
-    "Tanger": [35.77, -5.80], "Tetouan": [35.57, -5.36], "Al Hoceima": [35.25, -3.93],
-    "Nador": [35.17, -2.93], "Oujda": [34.68, -1.90], "Rabat": [34.02, -6.83],
-    "Casablanca": [33.57, -7.58], "Kenitra": [34.26, -6.58], "Fes": [34.03, -5.00],
-    "Meknes": [33.89, -5.55], "Ifrane": [33.53, -5.11], "Marrakech": [31.62, -7.98],
-    "Essaouira": [31.50, -9.77], "Agadir": [30.42, -9.59], "Ouarzazate": [30.91, -6.89],
-    "Errachidia": [31.93, -4.42], "Laayoune": [27.12, -13.19], "Dakhla": [23.68, -15.95],
-    "Tunis": [36.80, 10.18], "Cairo": [30.04, 31.23], "Dakar": [14.71, -17.46],
-    "Nairobi": [-1.29, 36.82], "Cape Town": [-33.92, 18.42], "Lagos": [6.52, 3.37],
-    "Paris": [48.85, 2.35], "London": [51.50, -0.12], "Berlin": [52.52, 13.40],
-    "Madrid": [40.41, -3.70], "Rome": [41.90, 12.49], "Moscow": [55.75, 37.61],
-    "Kyiv": [50.45, 30.52], "Oslo": [59.91, 10.75], "Istanbul": [41.00, 28.97],
-    "Athens": [37.98, 23.72], "Reykjavik": [64.14, -21.94], "Lisbon": [38.72, -9.13],
-    "Tokyo": [35.68, 139.76], "Beijing": [39.90, 116.40], "Mumbai": [19.07, 72.87],
-    "New Delhi": [28.61, 77.20], "Dubai": [25.20, 55.27], "Riyadh": [24.71, 46.67],
-    "Bangkok": [13.75, 100.50], "Singapore": [1.35, 103.81], "Seoul": [37.56, 126.97],
-    "Jakarta": [-6.20, 106.84], "New York": [40.71, -74.00], "Los Angeles": [34.05, -118.24],
-    "Chicago": [41.87, -87.62], "Toronto": [43.65, -79.38], "Mexico City": [19.43, -99.13],
-    "Rio de Janeiro": [-22.90, -43.17], "Buenos Aires": [-34.60, -58.38], "Santiago": [-33.44, -70.66],
-    "Bogota": [4.71, -74.07], "Lima": [-12.04, -77.04], "Sydney": [-33.86, 151.20],
-    "Melbourne": [-37.81, 144.96], "Auckland": [-36.84, 174.76]
-}
+
+# --- 3. CONNEXION BDD ---
+INFLUX_URL = "http://localhost:8086"
+INFLUX_TOKEN = "adminpassword"
+INFLUX_ORG = "ecostream"
+INFLUX_BUCKET = "weather_data"
 
 def load_data():
-    files = glob.glob("dashboard_data/*.json")
-    data_list = []
-    for file in files:
-        try:
-            with open(file, "r") as f:
-                item = json.load(f)
-                if item['city'] in CITY_COORDS:
-                    item['lat'] = CITY_COORDS[item['city']][0]
-                    item['lon'] = CITY_COORDS[item['city']][1]
-                    data_list.append(item)
-        except:
-            continue
-    return pd.DataFrame(data_list)
-
-# --- 4. SIDEBAR ---
-with st.sidebar:
-    st.title("🎛️ Contrôles")
-    df_init = load_data()
-    all_cities = sorted(df_init['city'].unique()) if not df_init.empty else []
-    
-    container = st.container()
-    all = st.checkbox(" Tout sélectionner", value=True)
-    if all:
-        selected_cities = container.multiselect("Villes:", all_cities, default=all_cities)
-    else:
-        selected_cities = container.multiselect("Villes:", all_cities)
+    try:
+        client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+        query_api = client.query_api()
         
-    
-
-# --- 5. CORPS PRINCIPAL ---
-placeholder = st.empty()
-
-while True:
-    with placeholder.container():
-        df = load_data()
-
-        if df.empty:
-            st.warning("⏳ En attente de données du flux Kafka...")
-            time.sleep(1)
-            continue
-
-        if selected_cities:
-            df = df[df['city'].isin(selected_cities)]
-
-        # --- EN-TÊTE ---
-        st.markdown("# 🌤️ Tableau de Bord Météo Temps Réel")
+        query = f"""
+        from(bucket: "{INFLUX_BUCKET}")
+          |> range(start: -24h)
+          |> filter(fn: (r) => r["_measurement"] == "weather_metrics")
+          |> last()
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        """
+        df = query_api.query_data_frame(query)
         
-        # --- KPI GLOBAUX (4 Colonnes) ---
-        k1, k2, k3, k4 = st.columns(4)
+        if isinstance(df, list) or df.empty: return pd.DataFrame()
+        if 'pred_max_tomorrow' not in df.columns: df['pred_max_tomorrow'] = 0.0
         
-        avg_temp = df['actual_temp'].mean()
-        hottest = df.loc[df['actual_temp'].idxmax()]
-        coldest = df.loc[df['actual_temp'].idxmin()]
-        
-        k1.metric(
-            label="Moyenne Globale",
-            value=f"{avg_temp:.1f} °C"
-        )
-        
-        k2.metric(
-            label=f"🔥 Max ({hottest['city']})",
-            value=f"{hottest['actual_temp']}°C"
-        )
-        
-        k3.metric(
-            label=f"❄️ Min ({coldest['city']})",
-            value=f"{coldest['actual_temp']}°C"
-        )
-        
-        k4.metric(
-            label="Stations Actives",
-            value=f"{len(df)}"
-        )
+        cols = ['actual_temp', 'pred_max_tomorrow', 'humidity', 'wind']
+        for c in cols:
+            if c in df.columns: df[c] = df[c].astype(float).round(1)
 
-        st.markdown("<br>", unsafe_allow_html=True) 
+        return df if 'city' in df.columns else pd.DataFrame()
+    except: return pd.DataFrame()
 
-        # --- ONGLETS ---
-        tab1, tab2, tab3 = st.tabs(["📊 Graphiques", "🗺️ Carte", "📋 Détails"])
+# --- 4. INTERFACE ---
+df = load_data()
 
-        # ONGLET 1 : GRAPHIQUE
-        with tab1:
-            st.subheader("Prévisions (24h) vs Réalité")
-            # Tri des données pour que la courbe soit lisible (froid -> chaud)
-            df_sorted = df.sort_values('actual_temp')
-            df_chart = df_sorted[['city', 'actual_temp', 'predicted_temp']].melt('city', var_name='Type', value_name='Température')
-            
-            # Couleurs personnalisées
-            domain = ['actual_temp', 'predicted_temp']
-            range_ = ['#2563EB', '#F97316'] # Bleu Royal et Orange Vif
-            
-            chart = alt.Chart(df_chart).mark_line(point=True, strokeWidth=3).encode(
-                x=alt.X('city', sort=None, title=None),
-                y=alt.Y('Température', title='Température (°C)'),
-                color=alt.Color('Type', scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Légende")),
-                tooltip=['city', 'Température', 'Type']
-            ).properties(height=450).configure_axis(
-                grid=True, gridColor="#E5E7EB"
-            ).interactive()
-            
+# En-tête simplifié
+st.markdown("###")
+st.markdown("## 🌤️ EcoStream AI | Tableau de Bord")
+st.markdown("---")
+
+if df.empty:
+    st.warning("📡 En attente de connexion satellite...")
+    time.sleep(3)
+    st.rerun()
+
+# --- A. LIGNE DES KPIS (Alignés grâce au CSS 'height: 140px') ---
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric("Stations Surveillées", f"{len(df)}")
+c2.metric("Moyenne Globale", f"{df['actual_temp'].mean():.1f}°C")
+c3.metric("Pic Moyen Demain", f"{df['pred_max_tomorrow'].mean():.1f}°C")
+
+hottest = df.loc[df['actual_temp'].idxmax()]
+# Le delta s'affiche, mais la carte aura la même taille que les autres grâce au CSS
+c4.metric("Point Chaud", f"{hottest['actual_temp']}°C", delta=f"{hottest['city']}")
+
+st.markdown("###")
+
+# --- B. ZONE PRINCIPALE (Alignement Hauteur) ---
+# On utilise st.columns pour séparer Contrôle (1/4) et Graphique (3/4)
+c_control, c_chart = st.columns([1, 3])
+
+with c_control:
+    # Conteneur Contrôle
+    with st.container(border=True):
+        
+        cities = sorted(df['city'].unique())
+        ix = cities.index("Tanger") if "Tanger" in cities else 0
+        choix = st.selectbox("Ville :", cities, index=ix)
+        
+        row = df[df['city'] == choix].iloc[0]
+        
+        st.caption(f"🕒 Donnée reçue à : {row['_time'].strftime('%H:%M:%S')}")
+        
+        # Métriques internes compactes
+        st.metric("Actuel", f"{row['actual_temp']}°C")
+        delta_val = row['pred_max_tomorrow'] - row['actual_temp']
+        st.metric("Max Demain", f"{row['pred_max_tomorrow']}°C", delta=f"{delta_val:+.1f}°C")
+
+with c_chart:
+    # Conteneur Graphique
+    with st.container(border=True):
+        st.markdown(f"### 📈 Courbe d'évolution prévue pour {choix}")
+        
+        # Données
+        hourly_data = []
+        for h in range(24):
+            col = f"pred_{h:02d}h"
+            if col in row:
+                hourly_data.append({"Heure": f"{h:02d}h", "Temp": row[col]})
+        chart_df = pd.DataFrame(hourly_data)
+        
+        if not chart_df.empty:
+            chart = alt.Chart(chart_df).mark_line(
+                point=True,
+                interpolate='catmull-rom',
+                strokeWidth=3
+            ).encode(
+                x=alt.X('Heure', sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+                y=alt.Y('Temp', scale=alt.Scale(zero=False), title=None),
+                color=alt.value("#3B82F6"),
+                tooltip=['Heure', 'Temp']
+            ).properties(
+                height=360 # Hauteur ajustée pour correspondre visuellement au bloc de gauche
+            )
             st.altair_chart(chart, use_container_width=True)
 
-        # ONGLET 2 : CARTE (CORRIGÉE)
-        with tab2:
-            st.subheader("Vue Satellite")
-            # On crée une colonne explicite pour la taille, au lieu de passer une série calculée
-            df['size_col'] = df['actual_temp'].abs() * 20 + 50 
-            
-            # Affichage de la carte avec la colonne 'size_col'
-            st.map(df, latitude='lat', longitude='lon', size='size_col', color='#DC2626')
+st.markdown("###")
 
-        # ONGLET 3 : DÉTAILS
-        with tab3:
-            st.subheader("Données Temps Réel")
-            cols = st.columns(4)
-            # Tri par nom de ville pour retrouver facilement
-            for index, row in df.sort_values('city').iterrows():
-                delta = row['predicted_temp'] - row['actual_temp']
-                
-                with cols[index % 4]:
-                    st.metric(
-                        label=f"📍 {row['city']}",
-                        value=f"{row['actual_temp']} °C",
-                        delta=f"{delta:+.2f}°C (Demain)",
-                        delta_color="inverse"
-                    )
-                    st.caption(f"Humidité: {row['humidity']}% | Vent: {row['wind']} km/h")
-                    st.markdown("---")
+# --- C. TABLEAU ---
+with st.container(border=True):
+    st.markdown("### 📋 Vue d'Ensemble")
+    
+    st.dataframe(
+        df[['city', 'actual_temp', 'pred_max_tomorrow', 'humidity', 'wind']],
+        column_config={
+            "city": "Ville",
+            "actual_temp": st.column_config.NumberColumn("Actuel", format="%.1f°C"),
+            "pred_max_tomorrow": st.column_config.NumberColumn("Max Demain", format="%.1f°C"),
+            "humidity": st.column_config.ProgressColumn("Humidité", format="%d%%", min_value=0, max_value=100),
+            "wind": st.column_config.NumberColumn("Vent", format="%.1f km/h")
+        },
+        use_container_width=True,
+        hide_index=True,
+        height=400
+    )
 
-    time.sleep(2)
+time.sleep(3)
+st.rerun()
