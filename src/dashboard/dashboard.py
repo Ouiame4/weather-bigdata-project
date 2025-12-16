@@ -183,6 +183,7 @@ with c_chart:
         for h in range(24):
             col = f"pred_{h:02d}h"
             if col in row:
+                valeur_arrondie = round(float(row[col]), 1)
                 hourly_data.append({"Heure": f"{h:02d}h", "Temp": row[col]})
         chart_df = pd.DataFrame(hourly_data)
         
@@ -195,7 +196,7 @@ with c_chart:
                 x=alt.X('Heure', sort=None, title=None, axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('Temp', scale=alt.Scale(zero=False), title=None),
                 color=alt.value("#3B82F6"),
-                tooltip=['Heure', 'Temp']
+                tooltip=['Heure', alt.Tooltip('Temp', format='.1f', title='Température')]
             ).properties(
                 height=360 # Hauteur ajustée pour correspondre visuellement au bloc de gauche
             )
