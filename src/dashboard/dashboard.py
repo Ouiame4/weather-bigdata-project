@@ -15,16 +15,10 @@ st.set_page_config(
 # --- 2. STYLE CSS AVANCÉ ---
 st.markdown("""
 <style>
-/* ========================= */
-/* FOND GLOBAL (GRIS)        */
-/* ========================= */
-.stApp {
-    background-color: #F8F9FA;
-}
+/* FOND GLOBAL */
+.stApp { background-color: #F8F9FA; }
 
-/* ========================= */
-/* KPI CARDS                 */
-/* ========================= */
+/* KPI CARDS */
 div[data-testid="stMetric"] {
     background-color: #FFFFFF !important;
     border: 1px solid #E6E6EA;
@@ -37,13 +31,8 @@ div[data-testid="stMetric"] {
     justify-content: center;
 }
 
-/* ========================= */
-/* CONTAINERS (BORDURES)     */
-/* ========================= */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    background-color: transparent !important;
-}
-
+/* CONTAINERS */
+div[data-testid="stVerticalBlockBorderWrapper"] { background-color: transparent !important; }
 div[data-testid="stVerticalBlockBorderWrapper"] > div {
     background-color: #FFFFFF !important;
     border-radius: 14px;
@@ -52,46 +41,19 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
-/* ========================= */
-/* GRAPHIQUES ALTAIR         */
-/* ========================= */
-div[data-testid="stVegaLiteChart"],
-div[data-testid="stVegaLiteChart"] > div {
-    background-color: #FFFFFF !important;
-}
-
-/* ========================= */
-/* DATAFRAME / TABLEAU       */
-/* ========================= */
-div[data-testid="stDataFrame"],
-div[data-testid="stDataFrame"] > div,
-div[data-testid="stDataFrame"] table {
+/* GRAPHIQUES & TABLEAUX */
+div[data-testid="stVegaLiteChart"], div[data-testid="stVegaLiteChart"] > div { background-color: #FFFFFF !important; }
+div[data-testid="stDataFrame"], div[data-testid="stDataFrame"] > div, div[data-testid="stDataFrame"] table {
     background-color: #FFFFFF !important;
     border-radius: 10px;
 }
+thead, tbody, tr, td, th { background-color: #FFFFFF !important; }
 
-/* cellules tableau */
-thead, tbody, tr, td, th {
-    background-color: #FFFFFF !important;
-}
+/* TITRES */
+h3 { font-size: 18px; font-weight: 600; color: #1E293B; margin-bottom: 16px; }
 
-/* ========================= */
-/* TITRES                    */
-/* ========================= */
-h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #1E293B;
-    margin-bottom: 16px;
-}
-
-/* ========================= */
-/* ESPACEMENT GLOBAL         */
-/* ========================= */
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-}
+/* ESPACEMENT */
+.block-container { padding-top: 2rem; padding-bottom: 2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -103,6 +65,7 @@ INFLUX_ORG = "ecostream"
 INFLUX_BUCKET = "weather_data"
 
 def load_data():
+    """Charge les dernières données"""
     try:
         client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
         query_api = client.query_api()
@@ -129,7 +92,7 @@ def load_data():
 # --- 4. INTERFACE ---
 df = load_data()
 
-# En-tête simplifié
+# En-tête
 st.markdown("###")
 st.markdown("## 🌤️ EcoStream AI | Tableau de Bord")
 st.markdown("---")
@@ -139,27 +102,21 @@ if df.empty:
     time.sleep(3)
     st.rerun()
 
-# --- A. LIGNE DES KPIS (Alignés grâce au CSS 'height: 140px') ---
+# --- A. LIGNE DES KPIS ---
 c1, c2, c3, c4 = st.columns(4)
-
 c1.metric("Stations Surveillées", f"{len(df)}")
 c2.metric("Moyenne Globale", f"{df['actual_temp'].mean():.1f}°C")
 c3.metric("Pic Moyen Demain", f"{df['pred_max_tomorrow'].mean():.1f}°C")
-
 hottest = df.loc[df['actual_temp'].idxmax()]
-# Le delta s'affiche, mais la carte aura la même taille que les autres grâce au CSS
 c4.metric("Point Chaud", f"{hottest['actual_temp']}°C", delta=f"{hottest['city']}")
 
 st.markdown("###")
 
-# --- B. ZONE PRINCIPALE (Alignement Hauteur) ---
-# On utilise st.columns pour séparer Contrôle (1/4) et Graphique (3/4)
+# --- B. ZONE PRINCIPALE ---
 c_control, c_chart = st.columns([1, 3])
 
 with c_control:
-    # Conteneur Contrôle
     with st.container(border=True):
-        
         cities = sorted(df['city'].unique())
         ix = cities.index("Tanger") if "Tanger" in cities else 0
         choix = st.selectbox("Ville :", cities, index=ix)
@@ -168,37 +125,44 @@ with c_control:
         
         st.caption(f"🕒 Donnée reçue à : {row['_time'].strftime('%H:%M:%S')}")
         
-        # Métriques internes compactes
         st.metric("Actuel", f"{row['actual_temp']}°C")
-        delta_val = row['pred_max_tomorrow'] - row['actual_temp']
-        st.metric("Max Demain", f"{row['pred_max_tomorrow']}°C", delta=f"{delta_val:+.1f}°C")
+        
+        # On récupère la prédiction qui correspond à l'heure actuelle
+        current_h = row['_time'].strftime('%H') # ex: "19"
+        pred_col = f"pred_{current_h}h"         # ex: "pred_19h"
+        val_pred = float(row[pred_col]) if pred_col in row else 0.0
+        
+        # On affiche la valeur prédite
+        delta_diff = val_pred - row['actual_temp']
+        st.metric("Prédiction demain", f"{val_pred:.1f}°C", delta=f"{delta_diff:+.1f}°C")
 
 with c_chart:
-    # Conteneur Graphique
     with st.container(border=True):
-        st.markdown(f"### 📈 Courbe d'évolution prévue pour {choix}")
+        st.markdown(f"### 📈 Tendance Prédite pour Demain : {choix}")
         
-        # Données
-        hourly_data = []
+        pred_data = []
         for h in range(24):
             col = f"pred_{h:02d}h"
             if col in row:
-                valeur_arrondie = round(float(row[col]), 1)
-                hourly_data.append({"Heure": f"{h:02d}h", "Temp": row[col]})
-        chart_df = pd.DataFrame(hourly_data)
+                pred_data.append({
+                    "Heure": f"{h:02d}h", 
+                    "Temp": float(row[col]),
+                    "Type": "Prédiction"
+                })
+        df_pred = pd.DataFrame(pred_data)
         
-        if not chart_df.empty:
-            chart = alt.Chart(chart_df).mark_line(
+        if not df_pred.empty:
+            chart = alt.Chart(df_pred).mark_line(
                 point=True,
                 interpolate='catmull-rom',
                 strokeWidth=3
             ).encode(
                 x=alt.X('Heure', sort=None, title=None, axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('Temp', scale=alt.Scale(zero=False), title=None),
-                color=alt.value("#3B82F6"),
-                tooltip=['Heure', alt.Tooltip('Temp', format='.1f', title='Température')]
+                color=alt.value("#EF4444"), # Rouge fixe
+                tooltip=['Heure', alt.Tooltip('Temp', format='.1f', title='Prédiction')]
             ).properties(
-                height=360 # Hauteur ajustée pour correspondre visuellement au bloc de gauche
+                height=360 
             )
             st.altair_chart(chart, use_container_width=True)
 
