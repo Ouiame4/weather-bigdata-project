@@ -10,21 +10,21 @@ Le système collecte les données de **59 stations météorologiques** mondiales
 
 Le projet repose sur une architecture moderne orientée événements (Event-Driven Architecture) :
 
-1.  ** Source de Données :**
-    * Simulation de capteurs via l'API **Open-Meteo**.
-    * Couverture : 59 villes majeures (Afrique, Europe, Asie, Amériques, Océanie).
-2.  ** Transport (Streaming) :**
-    * **Apache Kafka** (Mode KRaft, sans ZooKeeper).
-    * Sérialisation Avro via **Schema Registry**.
-3.  ** Intelligence Artificielle :**
-    * Modèle **XGBoost (Multi-Output Regressor)**.
-    * Capacité : Prédit une courbe complète de 24 points (heure par heure) pour J+1.
-4.  ** Stockage (Time Series) :**
-    * **InfluxDB** : Base de données optimisée pour les séries temporelles.
-    * Persistance des données réelles et des prédictions.
-5.  ** Visualisation :**
-    * Dashboard **Streamlit** style "SaaS/Monitoring".
-    * Connexion directe à la base de données.
+* **Source de Données :**
+    -  Simulation de capteurs via l'API **Open-Meteo**.
+    -  Couverture : 59 villes majeures (Afrique, Europe, Asie, Amériques, Océanie).
+* **Transport (Streaming) :**
+    - **Apache Kafka** (Mode KRaft, sans ZooKeeper).
+    - Sérialisation Avro via **Schema Registry**.
+* **Intelligence Artificielle :**
+    - Modèle **XGBoost (Multi-Output Regressor)**.
+    - Capacité : Prédit une courbe complète de 24 points (heure par heure) pour J+1.
+* **Stockage (Time Series) :**
+    - **InfluxDB** : Base de données optimisée pour les séries temporelles.
+    - Persistance des données réelles et des prédictions.
+* **Visualisation :**
+    - Dashboard **Streamlit** style "SaaS/Monitoring".
+    - Connexion directe à la base de données.
 
 ---
 
